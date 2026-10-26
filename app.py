@@ -98,9 +98,21 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper: Retrieve Sarvam API Key from environment or Streamlit Cloud Secrets
+def get_api_key():
+    key = os.getenv("SARVAM_API_KEY")
+    if key and key.strip():
+        return key.strip()
+    try:
+        if hasattr(st, "secrets") and "SARVAM_API_KEY" in st.secrets:
+            return str(st.secrets["SARVAM_API_KEY"]).strip()
+    except Exception:
+        pass
+    return None
+
 # Helper: Get Sarvam AI Client
 def get_sarvam_client():
-    api_key = os.getenv("SARVAM_API_KEY")
+    api_key = get_api_key()
     if not api_key:
         return None
     try:
@@ -244,11 +256,11 @@ st.markdown('<div class="main-title">🚲 IITK Marg-Darshak</div>', unsafe_allow
 st.markdown('<div class="sub-title">IIT Kanpur Campus Transit Intelligence & Roadblock Monitor | Powered by Sarvam AI</div>', unsafe_allow_html=True)
 
 # Connection indicator
-has_key = bool(os.getenv("SARVAM_API_KEY"))
+has_key = bool(get_api_key())
 if has_key:
     st.success("✅ Sarvam AI Connected")
 else:
-    st.warning("⚠️ Sarvam API Key missing in `.env`. Please add it to test live voice/text extraction.")
+    st.warning("⚠️ Sarvam API Key missing. Please add `SARVAM_API_KEY` to your Streamlit Cloud Secrets (or local `.env`).")
 
 # -------------------------------------------------------------
 # TWO CLEAR MAIN OPTIONS IN THE BEGINNING

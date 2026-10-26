@@ -2,6 +2,12 @@
 
 > **Voice-First Campus Roadblock Reporting & Safe Commute Advisor** built with **Sarvam AI** for **IIT Kanpur**.
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sarvam-iitk-marg-darshak.streamlit.app/)
+&nbsp;
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/soysaurav/sarvam-iitk-marg-darshak)
+
+📍 **Live Web Application**: [https://sarvam-iitk-marg-darshak.streamlit.app/](https://sarvam-iitk-marg-darshak.streamlit.app/)
+
 ---
 
 ## 🌟 Overview & Problem
@@ -19,8 +25,9 @@ Ground security guards (SIS), Malis, and cycling students who spot these first s
 ## 🚀 Key Features
 
 1. **🎙️ Voice-First Roadblock Reporting**:
-   - Guards/students send voice notes in Hindi/English.
-   - **Sarvam AI (`sarvam-105b-conversations`)** extracts road segment, hazard type, passability for bicycles/foot, and auto-pins it on the campus map.
+   - Guards/students record voice notes in Hindi, English, or Hinglish directly in browser.
+   - **Sarvam Saaras (`saaras:v3`)** transcribes spoken speech into vernacular text.
+   - **Sarvam AI (`sarvam-105b-conversations`)** extracts road segment, nearest landmark, hazard type, passability for bicycles/foot, and auto-pins it on the campus map with GPS coordinates.
 
 2. **🧭 Smart Campus Commute & Path Suggestion**:
    - Select your starting point and destination from a complete directory of:
@@ -34,19 +41,15 @@ Ground security guards (SIS), Malis, and cycling students who spot these first s
 
 ---
 
-## 🛠️ Tech Stack
-* **Language & Reasoning AI**: Sarvam AI `sarvam-105b-conversations`
+## 🛠️ Tech Stack & Sarvam AI Models
+* **Speech-to-Text**: Sarvam AI `saaras:v3` (Indic voice transcription)
+* **Reasoning & Natural Hinglish Extraction**: Sarvam AI `sarvam-105b-conversations`
 * **Voice Synthesis**: Sarvam AI `bulbul:v2` (Indic Text-to-Speech)
 * **Frontend Dashboard**: Streamlit
-* **Mapping**: Streamlit Native Map (OpenStreetMap focused on IIT Kanpur @ zoom 15)
+* **Mapping**: Pydeck & OpenStreetMap centered on IIT Kanpur campus
 
 ---
 
-## 📦 Deployment to Streamlit Community Cloud
-1. Push this repository to GitHub.
-2. In [share.streamlit.io](https://share.streamlit.io), connect your repo (`app.py`).
-3. Under **Advanced settings > Secrets**, add:
-   ```toml
-   SARVAM_API_KEY = "your_sarvam_api_key"
-   ```
-4. Click **Deploy**!
+## 🌐 Live Deployment
+The application is live on Streamlit Community Cloud:
+👉 **[https://sarvam-iitk-marg-darshak.streamlit.app/](https://sarvam-iitk-marg-darshak.streamlit.app/)**

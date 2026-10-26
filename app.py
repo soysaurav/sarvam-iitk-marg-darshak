@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import base64
 import pandas as pd
@@ -31,26 +32,68 @@ st.markdown("""
         margin-bottom: 20px;
     }
     .blockage-card {
-        background-color: #ffffff;
-        border-left: 5px solid #e63946;
+        background-color: #ffffff !important;
+        color: #111827 !important;
+        border: 1px solid #e5e7eb;
+        border-left: 5px solid #dc2626 !important;
         border-radius: 8px;
         padding: 14px 16px;
         margin-bottom: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+    .blockage-card * {
+        color: #111827;
+    }
+    .blockage-title {
+        color: #b91c1c !important;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+    .blockage-detail {
+        color: #1f2937 !important;
+        font-size: 14px;
+        margin-top: 4px;
+    }
+    .blockage-detail strong {
+        color: #111827 !important;
+    }
+    .blockage-meta {
+        color: #4b5563 !important;
+        font-size: 13px;
+        margin-top: 8px;
+        font-weight: 500;
+    }
+    .badge-landmark {
+        background-color: #fee2e2 !important;
+        color: #991b1b !important;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid #fecaca;
     }
     .route-safe {
         background-color: #e8f5e9;
+        color: #1b5e20 !important;
         border-left: 5px solid #2e7d32;
         border-radius: 8px;
         padding: 16px;
         margin-top: 10px;
     }
+    .route-safe * {
+        color: #1b5e20 !important;
+    }
     .route-blocked {
         background-color: #ffebee;
+        color: #b71c1c !important;
         border-left: 5px solid #c62828;
         border-radius: 8px;
         padding: 16px;
         margin-top: 10px;
+    }
+    .route-blocked * {
+        color: #b71c1c !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -66,14 +109,15 @@ def get_sarvam_client():
     except Exception:
         return None
 
-# Comprehensive IIT Kanpur Landmarks Database
+# Comprehensive IIT Kanpur Landmarks Database with Accurate GPS Coordinates
 CAMPUS_LOCATIONS = {
-    # Hostels
+    # Hostels (Halls of Residence)
     "Hall 1": {"lat": 26.5142, "lon": 80.2315},
     "Hall 2": {"lat": 26.5135, "lon": 80.2310},
     "Hall 3": {"lat": 26.5125, "lon": 80.2305},
     "Hall 4": {"lat": 26.5118, "lon": 80.2300},
     "Hall 5": {"lat": 26.5108, "lon": 80.2295},
+    "Hall 6": {"lat": 26.5140, "lon": 80.2355},
     "Hall 7": {"lat": 26.5090, "lon": 80.2285},
     "Hall 8": {"lat": 26.5080, "lon": 80.2290},
     "Hall 9": {"lat": 26.5065, "lon": 80.2315},
@@ -94,7 +138,7 @@ CAMPUS_LOCATIONS = {
     "Core Labs / Tutorial Complex": {"lat": 26.5122, "lon": 80.2345},
     "Flight Lab & Airstrip": {"lat": 26.5195, "lon": 80.2315},
 
-    # Food Outlets & Canteens
+    # Food Outlets & Student Activity
     "Naughty Blenders (New SAC)": {"lat": 26.5128, "lon": 80.2325},
     "Domino's / CCD (New SAC)": {"lat": 26.5130, "lon": 80.2326},
     "Old SAC / Dosa Plaza": {"lat": 26.5136, "lon": 80.2330},
@@ -106,8 +150,88 @@ CAMPUS_LOCATIONS = {
     "Health Centre (Emergency Care)": {"lat": 26.5138, "lon": 80.2355},
     "Main Gate (GT Road Exit)": {"lat": 26.5165, "lon": 80.2370},
     "Open Air Theatre (OAT)": {"lat": 26.5132, "lon": 80.2335},
-    "Community Centre": {"lat": 26.5150, "lon": 80.2360}
+    "Community Centre": {"lat": 26.5150, "lon": 80.2360},
+    "Visitors Hostel (VH)": {"lat": 26.5160, "lon": 80.2385}
 }
+
+# Accurate Multi-Stage Coordinate Resolver for IIT Kanpur Landmarks
+def resolve_campus_coordinates(location_str, full_text=""):
+    """
+    Precisely resolves campus coordinates using multi-stage matching:
+    1. Direct exact or normalized canonical match against CAMPUS_LOCATIONS keys
+    2. Word-boundary regular expressions (\\b) for multi-digit and single-digit halls (avoids Hall 1 vs Hall 12 collision)
+    3. Hindi and English synonyms with strict word boundaries
+    4. Safe fallback to campus center
+    """
+    loc_clean = (location_str or "").strip()
+    text_clean = (full_text or "").strip()
+    
+    # Candidates to evaluate in priority order
+    candidates = [loc_clean, f"{loc_clean} {text_clean}".strip()]
+    
+    # Stage 1: Exact or clean key match
+    for cand in candidates:
+        if not cand:
+            continue
+        cand_lower = cand.lower()
+        for key, coords in CAMPUS_LOCATIONS.items():
+            key_clean = key.lower().split(" (")[0].strip()
+            if key.lower() == cand_lower or key_clean == cand_lower:
+                return coords["lat"], coords["lon"], key
+
+    # Stage 2: Strict Regex Patterns with Word Boundaries (\\b)
+    # Ordered with multi-digit and specific landmarks FIRST to eliminate substring hijacking
+    patterns = [
+        # Multi-digit Halls (checked first to prevent single-digit false matches)
+        (r'\b(hall\s*(?:no\.?|number)?\s*13|h-?13|हॉल\s*(?:no\.?|नंबर)?\s*13|हॉल\s*तेरह|तेरह)\b', "Hall 13"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*12|h-?12|हॉल\s*(?:no\.?|नंबर)?\s*12|हॉल\s*बारह|हॉल\s*बारहा|बारह)\b', "Hall 12"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*11|h-?11|हॉल\s*(?:no\.?|नंबर)?\s*11|हॉल\s*ग्यारह|ग्यारह)\b', "Hall 11"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*10|h-?10|हॉल\s*(?:no\.?|नंबर)?\s*10|हॉल\s*दस|दस)\b', "Hall 10"),
+
+        # Single-digit Halls (strictly isolated with \\b so Hall 1 cannot match Hall 10/11/12/13)
+        (r'\b(hall\s*(?:no\.?|number)?\s*9|h-?9|हॉल\s*(?:no\.?|नंबर)?\s*9|हॉल\s*नौ)\b', "Hall 9"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*8|h-?8|हॉल\s*(?:no\.?|नंबर)?\s*8|हॉल\s*आठ)\b', "Hall 8"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*7|h-?7|हॉल\s*(?:no\.?|नंबर)?\s*7|हॉल\s*सात)\b', "Hall 7"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*6|h-?6|हॉल\s*(?:no\.?|नंबर)?\s*6|हॉल\s*छह|हॉल\s*छः)\b', "Hall 6"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*5|h-?5|हॉल\s*(?:no\.?|नंबर)?\s*5|हॉल\s*पांच)\b', "Hall 5"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*4|h-?4|हॉल\s*(?:no\.?|नंबर)?\s*4|हॉल\s*चार)\b', "Hall 4"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*3|h-?3|हॉल\s*(?:no\.?|नंबर)?\s*3|हॉल\s*तीन)\b', "Hall 3"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*2|h-?2|हॉल\s*(?:no\.?|नंबर)?\s*2|हॉल\s*दो)\b', "Hall 2"),
+        (r'\b(hall\s*(?:no\.?|number)?\s*1\b|h-?1\b|हॉल\s*(?:no\.?|नंबर)?\s*1\b|हॉल\s*एक\b)', "Hall 1"),
+
+        # Girls Hostels
+        (r'\b(gh\s*tower|गर्ल्स\s*होस्टल\s*टावर)\b', "GH Tower"),
+        (r'\b(gh-?1|girls\s*hostel\s*1|गर्ल्स\s*हॉस्टल|gh)\b', "Girls Hostel 1 (GH1)"),
+
+        # Student Activity & Food (Old SAC checked BEFORE SAC)
+        (r'\b(old\s*sac|पुराना\s*सैक|dosa\s*plaza|डोसा\s*प्लाजा)\b', "Old SAC / Dosa Plaza"),
+        (r'\b(new\s*sac|नया\s*सैक|naughty\s*blenders?|नॉटी\s*ब्लेंडर्स?|domino\'?s?|डोमिनोज?|ccd)\b', "Naughty Blenders (New SAC)"),
+        (r'\b(sac|सैक)\b', "Naughty Blenders (New SAC)"),
+
+        # Academic & Landmarks
+        (r'\b(library|kelkar|pk\s*kelkar|लाइब्रेरी|पुस्तकालय)\b', "PK Kelkar Library"),
+        (r'\b(lhc|lecture\s*hall(?:\s*complex)?|एलएचसी|लेक्चर\s*हॉल)\b', "Lecture Hall Complex (LHC)"),
+        (r'\b(computer\s*cent(?:re|er)|\bcc\b|कंप्यूटर\s*सेंटर)\b', "Computer Centre (CC)"),
+        (r'\b(faculty\s*building|\bfb\b|फैकल्टी\s*बिल्डिंग)\b', "Faculty Building (FB)"),
+        (r'\b(spase|एसपीएएसई)\b', "SPASE Department"),
+        (r'\b(acms|materials\s*science)\b', "Advanced Centre for Materials Science (ACMS)"),
+        (r'\b(core\s*labs?|tutorial\s*complex)\b', "Core Labs / Tutorial Complex"),
+        (r'\b(airstrip|flight\s*lab|एयरस्ट्रिप|रनवे|runway)\b', "Flight Lab & Airstrip"),
+        (r'\b(health\s*cent(?:re|er)|hospital|हेल्थ\s*सेंटर|अस्पताल|dispensary)\b', "Health Centre (Emergency Care)"),
+        (r'\b(main\s*gate|gt\s*road|मेन\s*गेट)\b', "Main Gate (GT Road Exit)"),
+        (r'\b(oat|open\s*air\s*theat(?:re|er)|ओपन\s*एयर)\b', "Open Air Theatre (OAT)"),
+        (r'\b(community\s*cent(?:re|er)|shopping\s*cent(?:re|er)|मार्केट|मार्किट|market)\b', "Community Centre"),
+        (r'\b(vh|visitor\'?s?\s*hostel|विजिटर्स\s*होस्टल)\b', "Visitors Hostel (VH)")
+    ]
+
+    search_corpus = f"{loc_clean} {text_clean}".lower()
+    for pattern, landmark_key in patterns:
+        if re.search(pattern, search_corpus, re.IGNORECASE):
+            data = CAMPUS_LOCATIONS[landmark_key]
+            return data["lat"], data["lon"], landmark_key
+
+    # Safe default: center of IIT Kanpur
+    return 26.5123, 80.2329, "IIT Kanpur Campus"
 
 # Start with completely clean state (0 roadblocks, 0 circles)
 if "blockages" not in st.session_state:
@@ -188,16 +312,20 @@ if "Option 1" in action_choice:
                             with st.spinner("Step 2/2: Sarvam-105B extracting coordinates & formatting in Hinglish..."):
                                 prompt = f"""You are the IIT Kanpur Transit Intelligence parser.
 Extract the road blockage information from this voice transcript.
-Output the hazard description and detour advice in natural conversational HINGLISH (Roman script Hindi like: 'Hall 1 se Library turn ke paas bada neem ka ped gir gaya hai aur pani bhara hai').
+Select the nearest campus landmark strictly from this IIT Kanpur landmarks list:
+- Hall 1, Hall 2, Hall 3, Hall 4, Hall 5, Hall 6, Hall 7, Hall 8, Hall 9, Hall 10, Hall 11, Hall 12, Hall 13
+- Girls Hostel 1 (GH1), GH Tower
+- Lecture Hall Complex (LHC), PK Kelkar Library, Computer Centre (CC), Faculty Building (FB), SPASE Department, Advanced Centre for Materials Science (ACMS), Core Labs / Tutorial Complex
+- Naughty Blenders (New SAC), Domino's / CCD (New SAC), Old SAC / Dosa Plaza
+- Health Centre (Emergency Care), Flight Lab & Airstrip, Main Gate (GT Road Exit), Open Air Theatre (OAT), Community Centre, Visitors Hostel (VH)
 
 Transcript: "{transcript}"
 
 Return JSON ONLY:
 {{
-  "segment": "Campus road segment (e.g., Hall 1 to Library turn)",
+  "segment": "Specific campus road segment (e.g., Hall 12 Road, Library Turn, New SAC link)",
+  "nearest_landmark": "Exact name from the landmark list above",
   "hazard_hinglish": "Detailed hazard description in conversational Hinglish",
-  "lat": 26.5125,
-  "lon": 80.2330,
   "passable_cycle": false,
   "passable_foot": true,
   "advice_hinglish": "Detour advice in conversational Hinglish"
@@ -215,13 +343,17 @@ Return JSON ONLY:
 
                                 parsed = json.loads(text_out)
                                 
+                                loc_name = parsed.get("nearest_landmark", "") or parsed.get("segment", "")
+                                calc_lat, calc_lon, resolved_landmark = resolve_campus_coordinates(loc_name, transcript)
+                                
                                 new_blk = {
                                     "id": f"BLK-{len(st.session_state.blockages)+1:03d}",
-                                    "segment": parsed.get("segment", "Campus Roadway, IIT Kanpur"),
+                                    "segment": parsed.get("segment", f"{resolved_landmark} Roadway"),
+                                    "landmark": resolved_landmark,
                                     "hazard": parsed.get("hazard_hinglish", parsed.get("hazard", "Obstruction / Waterlogging")),
                                     "reported_by": "Voice Note (Audio)",
-                                    "lat": float(parsed.get("lat", 26.5125)),
-                                    "lon": float(parsed.get("lon", 80.2330)),
+                                    "lat": calc_lat,
+                                    "lon": calc_lon,
                                     "passable_cycle": bool(parsed.get("passable_cycle", False)),
                                     "passable_foot": bool(parsed.get("passable_foot", True)),
                                     "advice": parsed.get("advice_hinglish", parsed.get("advice", "Alternate route use karein.")),
@@ -258,16 +390,20 @@ Return JSON ONLY:
                         try:
                             prompt = f"""You are the IIT Kanpur Transit Intelligence parser.
 Extract the road blockage information from this text note.
-Output the hazard description and detour advice in natural conversational HINGLISH (Roman script Hindi).
+Select the nearest campus landmark strictly from this IIT Kanpur landmarks list:
+- Hall 1, Hall 2, Hall 3, Hall 4, Hall 5, Hall 6, Hall 7, Hall 8, Hall 9, Hall 10, Hall 11, Hall 12, Hall 13
+- Girls Hostel 1 (GH1), GH Tower
+- Lecture Hall Complex (LHC), PK Kelkar Library, Computer Centre (CC), Faculty Building (FB), SPASE Department, Advanced Centre for Materials Science (ACMS), Core Labs / Tutorial Complex
+- Naughty Blenders (New SAC), Domino's / CCD (New SAC), Old SAC / Dosa Plaza
+- Health Centre (Emergency Care), Flight Lab & Airstrip, Main Gate (GT Road Exit), Open Air Theatre (OAT), Community Centre, Visitors Hostel (VH)
 
 Note: "{user_text}"
 
 Return JSON ONLY:
 {{
-  "segment": "Campus road segment (e.g., Hall 12 road, Library turn, New SAC road)",
+  "segment": "Specific campus road segment (e.g., Hall 12 Road, Library Turn, New SAC link)",
+  "nearest_landmark": "Exact name from the landmark list above",
   "hazard_hinglish": "Hazard description in natural Hinglish",
-  "lat": 26.5125,
-  "lon": 80.2330,
   "passable_cycle": false,
   "passable_foot": true,
   "advice_hinglish": "Detour advice in natural Hinglish"
@@ -285,13 +421,17 @@ Return JSON ONLY:
 
                             parsed = json.loads(text_out)
                             
+                            loc_name = parsed.get("nearest_landmark", "") or parsed.get("segment", "")
+                            calc_lat, calc_lon, resolved_landmark = resolve_campus_coordinates(loc_name, user_text)
+                            
                             new_blk = {
                                 "id": f"BLK-{len(st.session_state.blockages)+1:03d}",
-                                "segment": parsed.get("segment", "Campus Roadway, IIT Kanpur"),
+                                "segment": parsed.get("segment", f"{resolved_landmark} Roadway"),
+                                "landmark": resolved_landmark,
                                 "hazard": parsed.get("hazard_hinglish", "Obstruction"),
                                 "reported_by": "Text Message",
-                                "lat": float(parsed.get("lat", 26.5125)),
-                                "lon": float(parsed.get("lon", 80.2330)),
+                                "lat": calc_lat,
+                                "lon": calc_lon,
                                 "passable_cycle": bool(parsed.get("passable_cycle", False)),
                                 "passable_foot": bool(parsed.get("passable_foot", True)),
                                 "advice": parsed.get("advice_hinglish", "Alternate route use karein."),
@@ -317,10 +457,10 @@ else:
         for b in st.session_state.blockages:
             st.markdown(f"""
             <div class="blockage-card">
-                <strong>🚫 {b['segment']}</strong><br>
-                • <strong>Problem (Hinglish):</strong> {b['hazard']}<br>
-                • <strong>Suggested Detour:</strong> {b['advice']}<br>
-                <span style="color: #666; font-size: 13px;">Cycle Passable: {'✅ Haan' if b['passable_cycle'] else '❌ Nahi'} | Foot: {'✅ Haan' if b['passable_foot'] else '❌ Nahi'} | Reported: {b['reported_by']}</span>
+                <div class="blockage-title">🚫 {b['segment']} &nbsp;<span class="badge-landmark">📍 {b.get('landmark', 'IITK Landmark')} ({b['lat']:.4f}, {b['lon']:.4f})</span></div>
+                <div class="blockage-detail"><strong>Problem (Hinglish):</strong> {b['hazard']}</div>
+                <div class="blockage-detail"><strong>Suggested Detour:</strong> {b['advice']}</div>
+                <div class="blockage-meta">Cycle Passable: {'✅ Haan' if b['passable_cycle'] else '❌ Nahi'} | Foot: {'✅ Haan' if b['passable_foot'] else '❌ Nahi'} | Reported: {b['reported_by']}</div>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -417,18 +557,30 @@ view_state = pdk.ViewState(
 if st.session_state.blockages:
     col_info, col_clear = st.columns([3, 1])
     with col_info:
-        st.caption("🔴 Red markers indicate currently reported campus roadblocks:")
+        st.caption("🔴 Red markers indicate currently reported campus roadblocks (auto-centered on latest report):")
     with col_clear:
         if st.button("🧹 Clear All Roadblocks"):
             st.session_state.blockages = []
             st.rerun()
+
+    # Automatically focus the map view on the latest reported blockage
+    latest = st.session_state.blockages[0]
+    view_state = pdk.ViewState(
+        latitude=latest["lat"],
+        longitude=latest["lon"],
+        zoom=16,
+        pitch=0
+    )
 
     map_df = pd.DataFrame([
         {
             "lat": b["lat"],
             "lon": b["lon"],
             "name": b["segment"],
-            "hazard": b["hazard"]
+            "pin_label": f"🚫 {b.get('landmark', b['segment'])[:18]}",
+            "landmark": b.get("landmark", "Campus Landmark"),
+            "hazard": b["hazard"],
+            "coords": f"{b['lat']:.4f}, {b['lon']:.4f}"
         }
         for b in st.session_state.blockages
     ])
@@ -438,14 +590,31 @@ if st.session_state.blockages:
         data=map_df,
         get_position=["lon", "lat"],
         get_fill_color=[220, 20, 60, 220],
-        get_radius=25,
+        get_radius=30,
+        radius_min_pixels=10,
+        radius_max_pixels=25,
         pickable=True
     )
 
+    text_layer = pdk.Layer(
+        "TextLayer",
+        data=map_df,
+        get_position=["lon", "lat"],
+        get_text="pin_label",
+        get_size=13,
+        get_color=[255, 255, 255, 255],
+        get_angle=0,
+        get_text_anchor="'middle'",
+        get_alignment_baseline="'bottom'",
+        get_pixel_offset=[0, -14],
+        background=True,
+        get_background_color=[180, 20, 40, 220]
+    )
+
     deck = pdk.Deck(
-        layers=[scatter_layer],
+        layers=[scatter_layer, text_layer],
         initial_view_state=view_state,
-        tooltip={"text": "Roadblock: {name}\nHazard: {hazard}"}
+        tooltip={"text": "📍 {landmark}\n🛣️ {name}\n⚠️ {hazard}\n🌐 GPS: {coords}"}
     )
     st.pydeck_chart(deck)
     
@@ -453,7 +622,14 @@ if st.session_state.blockages:
     for idx, b in enumerate(st.session_state.blockages):
         c_desc, c_btn = st.columns([4, 1.2])
         with c_desc:
-            st.markdown(f'<div class="blockage-card"><strong>🔴 {b["segment"]}</strong> — {b["hazard"]}<br><span style="color: #666; font-size: 13px;">Reported via: {b["reported_by"]} | Detour: {b["advice"]}</span></div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="blockage-card">
+                <div class="blockage-title">🔴 {b["segment"]} &nbsp;<span class="badge-landmark">📍 {b.get('landmark', 'IITK Landmark')} ({b['lat']:.4f}, {b['lon']:.4f})</span></div>
+                <div class="blockage-detail"><strong>Problem:</strong> {b["hazard"]}</div>
+                <div class="blockage-detail"><strong>Detour Advice:</strong> {b["advice"]}</div>
+                <div class="blockage-meta">Reported via: {b["reported_by"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
         with c_btn:
             st.write("")
             if st.button("✅ Mark Fixed", key=f"fix_btn_{b['id']}_{idx}", help="Click when tree removed, water drained, or road reopened"):
